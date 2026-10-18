@@ -1,21 +1,18 @@
+import matplotlib.pyplot as plt
+import seaborn as sns
 import pandas as pd
-
 
 df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
 
+sns.set_theme(style='darkgrid')
+plt.figure(figsize=(10, 6))
 
-print("Перші 5 рядків датасету:")
-print(df.head())
+sns.histplot(data=df, x='Flow_Duration', hue='Label', multiple='dodge', bins=20)
 
+plt.title("Розподіл тривалості потоків (Flow Duration) за типами трафіку")
+plt.xlabel("Тривалысть потоку (Flow Duration)")
+plt.ylabel("Кількість")
 
-print("\nЗагальна інформація про датасет:")
-df.info()
-
-
-print("\nНазви стовпців:")
-print(df.columns)
-
-
-print("\nРозмір датасету:")
-print(f"Кількість рядків: {df.shape[0]}")
-print(f"Кількість стовпців: {df.shape[1]}")
+plt.savefig("traffic_visualization.png")
+print("Графік успішно збережено у файл traffic_visualization та готви для звіту")
+plt.show()
