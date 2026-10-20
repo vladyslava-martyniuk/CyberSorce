@@ -117,16 +117,47 @@ plt.title(
 plt.xlabel("Тривалість потоку (Flow Duration)")
 plt.ylabel("Кількість")
 
-plt.tight_layout()
+plt.savefig("traffic_visualization.png")
+print("Графік успішно збережено у файл traffic_visualization та готовий до звіту")
+plt.show()
 
 
-plt.savefig(
-    "traffic_visualization.png",
-    dpi=300,
-    bbox_inches="tight"
+df_transformed = pd.get_dummies(
+    df, 
+    columns=['Protocol', 'Connection_State'], 
+    prefix=['Protocol', 'State'], 
+    dtype=int
 )
 
-print("Графік збережено у файл traffic_visualization.png.")
+
+df_transformed['fwd_bwd_packet_ratio'] = df_transformed['Total_Fwd_Packets'] / (df_transformed['Total_Backward_Packets'] + 1e-5)
+df_transformed['bytes_per_packet_mean'] = df_transformed['Flow_Bytes_per_s'] / (df_transformed['Flow_Packets_per_s'] + 1e-5)
+df_transformed['packet_growth_rate'] = (df_transformed['Total_Fwd_Packets'] - df_transformed['Total_Backward_Packets']) / df_transformed['Flow_Duration']
+
+output_filename = 'cybersecurity_network_traffic_transformed.csv'
+df_transformed.to_csv(output_filename, index=False)
+
+print(f"Трансформований датасет збережено у файл: {output_filename}")
 
 
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+sns.histplot(df['Flow_Duration'], kde=True, color='blue')
+plt.title('Розподіл тривалості потоку (Flow_Duration)')
+
+plt.subplot(1, 2, 2)
+sns.histplot(df['Flow_Bytes_per_s'], kde=True, color='green')
+plt.title('Розподіл інтенсивності трафіку (Flow_Bytes_per_s)')
+
+plt.tight_layout()
+plt.show()
+
+plt.figure(figsize=(8, 5))
+sns.boxplot(x='Protocol', y='Flow_Bytes_per_s', data=df)
+plt.title('Порівняння інтенсивності трафіку (Flow_Bytes_per_s) за протоколами')
+plt.show()
+
+pairplot_cols = ['Flow_Duration', 'Total_Fwd_Packets', 'Total_Backward_Packets', 'Flow_Bytes_per_s']
+sns.pairplot(df[pairplot_cols], diag_kind='kde')
 plt.show()
