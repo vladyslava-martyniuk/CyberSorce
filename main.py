@@ -1,66 +1,132 @@
+import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
-import time
+
 
 df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
 
+
 def check_data_quality(df):
     """
-    Функція для перевірки якості даних у DataFrame.
-    df: pandas.DataFrame - вхідний DataFrame для перевірки.
-    Повертає DataFrame після перевірки якості даних.
+    Перевіряє наявність пропущених значень і дублікатів.
     """
-    if not df.empty:
-        if df.isnull().sum().any():
-            print(f"Кількість пропущених значень у кожному стовпці:\n{df.isnull().sum()}")
-        else:
-            print("Пропущених значень у даних немає.")
+    if df.empty:
+        print("DataFrame порожній. Перевірка неможлива.")
+        return
 
-        if df.duplicated().sum() > 0:
-            print(f"Кількість дубльованих значень:\n{df.duplicated().sum()}")
-        else:
-            print("Дубльованих значень у даних немає.")
-    else:
-        print("DataFrame порожній. Перевірка якості даних неможлива.")
-        return df
+    print("Кількість пропущених значень у кожному стовпці:")
+    print(df.isnull().sum())
 
-
-check_data_quality(df)
+    print(f"\nЗагальна кількість пропущених значень: {df.isnull().sum().sum()}")
+    print(f"Кількість дублікатів: {df.duplicated().sum()}")
 
 
 def clean_data_quality(df):
     """
-    Функція для очищення даних у DataFrame від пропущених та дубльованих значень.
-    df: pandas.DataFrame - вхідний DataFrame для очищення.
-    Повертає очищений DataFrame після видалення пропущених та дубльованих значень 
-    або повідомляє, що очищення не потрібне і повертає оригінальний DataFrame.
+    Заповнює пропущені значення медіаною для числових стовпців
+    і найчастішим значенням для текстових.
+    Видаляє дублікати.
     """
-    if not df.empty:
-        if df.isnull().sum().any() or df.duplicated().sum() > 0:
-            df_cleaned = df.dropna().drop_duplicates()
-            print(f"Дані до очищення: {df.shape[0]} рядків та {df.shape[1]} стовпців.")
-            print(f"Дані після очищення: {df_cleaned.shape[0]} рядків та {df_cleaned.shape[1]} стовпців.")
-            return df_cleaned
-        else:
-            print("Пропущених та дубльованих значень у даних немає. Очищення не потрібне.")
-            return df
-    else:
-        print("DataFrame порожній. Очищення даних неможливе.")
-        return df
+    if df.empty:
+        print("DataFrame порожній. Очищення неможливе.")
+        return df.copy()
 
-time.sleep(1)
+    df_cleaned = df.copy()
+
+    rows_before = len(df_cleaned)
+
+   
+    for column in df_cleaned.columns:
+        missing_count = df_cleaned[column].isnull().sum()
+
+        if missing_count > 0:
+            if pd.api.types.is_numeric_dtype(df_cleaned[column]):
+                
+                median_value = df_cleaned[column].median()
+
+                if pd.notna(median_value):
+                    df_cleaned[column] = df_cleaned[column].fillna(
+                        median_value
+                    )
+                else:
+                    print(
+                        f"Увага: стовпець {column} не має "
+                        "доступних числових значень для обчислення медіани."
+                    )
+
+            else:
+                
+                mode_values = df_cleaned[column].mode()
+
+                if not mode_values.empty:
+                    df_cleaned[column] = df_cleaned[column].fillna(
+                        mode_values[0]
+                    )
+                else:
+                    print(
+                        f"Увага: стовпець {column} не має "
+                        "значень для заповнення пропусків."
+                    )
+
+    df_cleaned = df_cleaned.drop_duplicates()
+
+    rows_after = len(df_cleaned)
+
+    print(f"\nКількість рядків до очищення: {rows_before}")
+    print(f"Кількість рядків після очищення: {rows_after}")
+    print(f"Видалено дублікатів: {rows_before - rows_after}")
+
+    print(
+        "\nКількість пропущених значень після очищення:",
+        df_cleaned.isnull().sum().sum()
+    )
+
+    return df_cleaned
+
+
+
+print("=== ПЕРЕВІРКА ЯКОСТІ ДАНИХ ===")
+check_data_quality(df)
+
+
+print("\n=== ОЧИЩЕННЯ ДАНИХ ===")
 df_cleaned = clean_data_quality(df)
 
-sns.set_theme(style='darkgrid')
+
+df_cleaned.to_csv(
+    "cybersecurity_network_traffic_cleaned.csv",
+    index=False
+)
+
+print("\nОчищений датасет збережено.")
+
+sns.set_theme(style="darkgrid")
 plt.figure(figsize=(10, 6))
 
-sns.histplot(data=df, x='Flow_Duration', hue='Label', multiple='dodge', bins=20)
+sns.histplot(
+    data=df_cleaned,
+    x="Flow_Duration",
+    hue="Label",
+    multiple="dodge",
+    bins=20
+)
 
-plt.title("Розподіл тривалості потоків (Flow Duration) за типами трафіку")
-plt.xlabel("Тривалішсть потоку (Flow Duration)")
+plt.title(
+    "Розподіл тривалості мережевих потоків за типами трафіку"
+)
+plt.xlabel("Тривалість потоку (Flow Duration)")
 plt.ylabel("Кількість")
 
-plt.savefig("traffic_visualization.png")
-print("Графік успішно збережено у файл traffic_visualization та готовий до звіту")
+plt.tight_layout()
+
+
+plt.savefig(
+    "traffic_visualization.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+
+print("Графік збережено у файл traffic_visualization.png.")
+
+
 plt.show()
