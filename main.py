@@ -161,3 +161,67 @@ plt.show()
 pairplot_cols = ['Flow_Duration', 'Total_Fwd_Packets', 'Total_Backward_Packets', 'Flow_Bytes_per_s']
 sns.pairplot(df[pairplot_cols], diag_kind='kde')
 plt.show()
+
+
+# -------------------------------------------------------------
+# ЗАВДАННЯ 5: Лінійні графіки трендів
+# -------------------------------------------------------------
+top_ports = [443, 80, 53]
+df_selected = df_cleaned[df_cleaned['Destination_Port'].isin(top_ports)].copy()
+df_selected['Stream_ID'] = df_selected.groupby('Destination_Port').cumcount()
+
+plt.figure(figsize=(14, 6))
+
+# Тренд Flow_Duration
+plt.subplot(1, 2, 1)
+sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Duration', hue='Destination_Port', palette='Set2')
+plt.title("Тренд Flow Duration для портів (443, 80, 53)")
+plt.xlabel("Порядковий номер потоку")
+plt.ylabel("Flow Duration")
+
+
+
+# Тренд Flow_Bytes_per_s
+plt.subplot(1, 2, 2)
+sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Bytes_per_s', hue='Destination_Port', palette='Set2')
+plt.title("Тренд Flow Bytes/s для портів (443, 80, 53)")
+plt.xlabel("Порядковий номер потоку")
+plt.ylabel("Flow Bytes per second")
+
+plt.tight_layout()
+plt.savefig("trends_ports_analysis.png")
+print("Графік трендів збережено у файл trends_ports_analysis.png")
+plt.show()
+
+# -------------------------------------------------------------
+# ЗАВДАННЯ 5: Бар-чарт топ-10
+# -------------------------------------------------------------
+top10_ports = df_cleaned.groupby('Destination_Port')['Flow_Bytes_per_s'].mean().nlargest(10).reset_index()
+
+plt.figure(figsize=(10, 5))
+sns.barplot(data=top10_ports, x='Destination_Port', y='Flow_Bytes_per_s', palette='viridis', order=top10_ports['Destination_Port'])
+plt.title("Топ-10 Destination_Port за середнім Flow_Bytes_per_s")
+plt.xlabel("Destination Port")
+plt.ylabel("Середній Flow Bytes/s")
+
+plt.tight_layout()
+plt.savefig("top10_ports_traffic.png")
+print("Бар-чарт топ-10 портів збережено у файл top10_ports_traffic.png")
+plt.show()
+
+# -------------------------------------------------------------
+# ЗАВДАННЯ 5 Найвищі та найнижчі значення 
+# -------------------------------------------------------------
+print("\n=== Екстремальні значення метрик для портів 443, 80, 53 ===")
+for port in top_ports:
+    port_data = df_cleaned[df_cleaned['Destination_Port'] == port]
+    if not port_data.empty:
+        max_duration = port_data['Flow_Duration'].max()
+        min_duration = port_data['Flow_Duration'].min()
+        
+        max_bytes = port_data['Flow_Bytes_per_s'].max()
+        min_bytes = port_data['Flow_Bytes_per_s'].min()
+        
+        print(f"\nПорт: {port}")
+        print(f"  [Flow Duration]   Максимум: {max_duration} | Мінімум: {min_duration}")
+        print(f"  [Flow Bytes/s]    Максимум: {max_bytes} | Мінімум: {min_bytes}")
