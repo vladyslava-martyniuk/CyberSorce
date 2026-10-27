@@ -1,7 +1,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import PolynomialFeatures
 
 df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
 
@@ -225,3 +228,83 @@ for port in top_ports:
         print(f"\nПорт: {port}")
         print(f"  [Flow Duration]   Максимум: {max_duration} | Мінімум: {min_duration}")
         print(f"  [Flow Bytes/s]    Максимум: {max_bytes} | Мінімум: {min_bytes}")
+
+
+features_cols = [
+    'Flow_Duration',
+    'Total_Fwd_Packets',
+    'Total_Backward_Packets',
+    'fwd_bwd_packet_ratio',
+    'bytes_per_packet_mean',
+    'packet_growth_rate',
+]
+
+X = df_transformed.drop(columns=['Flow_Bytes_per_s', 'Label'], errors='ignore')
+X = X.select_dtypes(include=['number'])
+
+y = df_transformed['Flow_Bytes_per_s']
+
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42
+)
+
+results = {}
+
+# -------------------------------------------------------------
+#                       Linear Regression
+# -------------------------------------------------------------
+lr = LinearRegression()
+lr.fit(X_train, y_train)
+y_pred_lr = lr.predict(X_test)
+results["Linear Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lr),
+    "R2": r2_score(y_test, y_pred_lr),
+}
+
+# -------------------------------------------------------------
+#              Polynomial Regression (ступінь 2)
+# -------------------------------------------------------------
+poly = PolynomialFeatures(degree=2, include_bias=False)
+X_train_poly = poly.fit_transform(X_train)
+X_test_poly = poly.transform(X_test)
+
+poly_lr = LinearRegression()
+poly_lr.fit(X_train_poly, y_train)
+y_pred_poly = poly_lr.predict(X_test_poly)
+results["Polynomial Regression (deg=2)"] = {
+    "MSE": mean_squared_error(y_test, y_pred_poly),
+    "R2": r2_score(y_test, y_pred_poly),
+}
+
+# -------------------------------------------------------------
+#                       Ridge Regression
+# -------------------------------------------------------------
+ridge = Ridge(alpha=1.0, random_state=42)
+ridge.fit(X_train, y_train)
+y_pred_ridge = ridge.predict(X_test)
+results["Ridge Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_ridge),
+    "R2": r2_score(y_test, y_pred_ridge),
+}
+
+# -------------------------------------------------------------
+#                       Lasso Regression
+# -------------------------------------------------------------
+lasso = Lasso(alpha=1.0, random_state=42)
+lasso.fit(X_train, y_train)
+y_pred_lasso = lasso.predict(X_test)
+results["Lasso Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lasso),
+    "R2": r2_score(y_test, y_pred_lasso),
+}
+
+
+results_df = pd.DataFrame(results).T
+print(results_df)
+
+
+best_model_name = results_df["MSE"].idxmin()
+print(
+    f"\nНайкраща модель за показником MSE: **{best_model_name}** з мін. помилкою."
+)
