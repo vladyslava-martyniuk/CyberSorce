@@ -1,358 +1,312 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from pathlib import Path
-import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix
+)
 
-df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
+folder = Path.cwd()
 
+possible_files = [
+    "cybersecurity_network_traffic_cleaned.csv",
+    "cybersecurity_network_traffic.csv",
+    "cybersecurity_network_traffic_synthetic.csv"
+]
 
-def check_data_quality(df):
-    """
-    Перевіряє наявність пропущених значень і дублікатів.
-    """
-    if df.empty:
-        print("DataFrame порожній. Перевірка неможлива.")
-        return
+data_path = next(
+    (folder / file for file in possible_files if (folder / file).exists()),
+    None
+)
 
-    print("Кількість пропущених значень у кожному стовпці:")
-    print(df.isnull().sum())
-
-    print(f"\nЗагальна кількість пропущених значень: {df.isnull().sum().sum()}")
-    print(f"Кількість дублікатів: {df.duplicated().sum()}")
-
-
-def clean_data_quality(df):
-    """
-    Заповнює пропущені значення медіаною для числових стовпців
-    і найчастішим значенням для текстових.
-    Видаляє дублікати.
-    """
-    if df.empty:
-        print("DataFrame порожній. Очищення неможливе.")
-        return df.copy()
-
-    df_cleaned = df.copy()
-
-    rows_before = len(df_cleaned)
-
-   
-    for column in df_cleaned.columns:
-        missing_count = df_cleaned[column].isnull().sum()
-
-        if missing_count > 0:
-            if pd.api.types.is_numeric_dtype(df_cleaned[column]):
-                
-                median_value = df_cleaned[column].median()
-
-                if pd.notna(median_value):
-                    df_cleaned[column] = df_cleaned[column].fillna(
-                        median_value
-                    )
-                else:
-                    print(
-                        f"Увага: стовпець {column} не має "
-                        "доступних числових значень для обчислення медіани."
-                    )
-
-            else:
-                
-                mode_values = df_cleaned[column].mode()
-
-                if not mode_values.empty:
-                    df_cleaned[column] = df_cleaned[column].fillna(
-                        mode_values[0]
-                    )
-                else:
-                    print(
-                        f"Увага: стовпець {column} не має "
-                        "значень для заповнення пропусків."
-                    )
-
-    df_cleaned = df_cleaned.drop_duplicates()
-
-    rows_after = len(df_cleaned)
-
-    print(f"\nКількість рядків до очищення: {rows_before}")
-    print(f"Кількість рядків після очищення: {rows_after}")
-    print(f"Видалено дублікатів: {rows_before - rows_after}")
-
-    print(
-        "\nКількість пропущених значень після очищення:",
-        df_cleaned.isnull().sum().sum()
+if data_path is None:
+    raise FileNotFoundError(
+        "Не знайдено CSV-файл датасету в поточній папці."
     )
 
-    return df_cleaned
+df = pd.read_csv(data_path)
 
+df.columns = df.columns.str.strip()
 
-
-print("=== ПЕРЕВІРКА ЯКОСТІ ДАНИХ ===")
-check_data_quality(df)
-
-
-print("\n=== ОЧИЩЕННЯ ДАНИХ ===")
-df_cleaned = clean_data_quality(df)
-
-
-df_cleaned.to_csv(
-    "cybersecurity_network_traffic_cleaned.csv",
-    index=False
+target_column = next(
+    (col for col in df.columns if col.lower() == "label"),
+    None
 )
 
-print("\nОчищений датасет збережено.")
+if target_column is None:
+    raise ValueError("У датасеті не знайдено стовпець Label.")
 
-sns.set_theme(style="darkgrid")
-plt.figure(figsize=(10, 6))
+df = df.dropna(subset=[target_column]).drop_duplicates().copy()
 
-sns.histplot(
-    data=df_cleaned,
-    x="Flow_Duration",
-    hue="Label",
-    multiple="dodge",
-    bins=20
+df[target_column] = (
+    df[target_column]
+    .astype(str)
+    .str.strip()
+    .str.upper()
 )
 
-plt.title(
-    "Розподіл тривалості мережевих потоків за типами трафіку"
+df[target_column] = df[target_column].replace({
+    "BENIGN": 0,
+    "ATTACK": 1
+})
+
+if not set(df[target_column].unique()).issubset({0, 1}):
+    raise ValueError(
+        "У Label мають бути лише значення BENIGN і ATTACK."
+    )
+
+df[target_column] = df[target_column].astype(int)
+
+if df[target_column].nunique() < 2:
+    raise ValueError(
+        "Для навчання потрібні обидва класи: BENIGN та ATTACK."
+    )
+
+if {"Total Bytes Sent", "Total Bytes Received"}.issubset(df.columns):
+    df["total_bytes"] = (
+        df["Total Bytes Sent"] + df["Total Bytes Received"]
+    )
+
+if {"Total Fwd Packets", "Total Backward Packets"}.issubset(df.columns):
+    df["total_packets"] = (
+        df["Total Fwd Packets"] + df["Total Backward Packets"]
+    )
+
+if {"total_bytes", "duration"}.issubset(df.columns):
+    df["bytes_per_sec"] = (
+        df["total_bytes"] / df["duration"].replace(0, np.nan)
+    )
+
+if {"total_packets", "duration"}.issubset(df.columns):
+    df["packets_per_sec"] = (
+        df["total_packets"] / df["duration"].replace(0, np.nan)
+    )
+
+X = df.drop(columns=[target_column])
+y = df[target_column]
+
+X = X.replace([np.inf, -np.inf], np.nan)
+
+numeric_features = X.select_dtypes(
+    include=["number"]
+).columns.tolist()
+
+categorical_features = X.select_dtypes(
+    exclude=["number"]
+).columns.tolist()
+
+transformers = []
+
+if numeric_features:
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+
+    transformers.append(
+        ("numeric", numeric_pipeline, numeric_features)
+    )
+
+if categorical_features:
+    categorical_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore"))
+    ])
+
+    transformers.append(
+        ("categorical", categorical_pipeline, categorical_features)
+    )
+
+preprocessor = ColumnTransformer(
+    transformers=transformers
 )
-plt.xlabel("Тривалість потоку (Flow Duration)")
-plt.ylabel("Кількість")
 
-plt.savefig("traffic_visualization.png")
-print("Графік успішно збережено у файл traffic_visualization та готовий до звіту")
-plt.show()
-
-
-df_transformed = pd.get_dummies(
-    df, 
-    columns=['Protocol', 'Connection_State'], 
-    prefix=['Protocol', 'State'], 
-    dtype=int
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
 )
 
+models = {
+    "Logistic Regression": LogisticRegression(
+        max_iter=2000,
+        random_state=42
+    ),
+    "Decision Tree": DecisionTreeClassifier(
+        random_state=42
+    ),
+    "Random Forest": RandomForestClassifier(
+        n_estimators=100,
+        random_state=42
+    ),
+    "k-NN": KNeighborsClassifier(
+        n_neighbors=5
+    )
+}
 
-df_transformed['fwd_bwd_packet_ratio'] = df_transformed['Total_Fwd_Packets'] / (df_transformed['Total_Backward_Packets'] + 1e-5)
-df_transformed['bytes_per_packet_mean'] = df_transformed['Flow_Bytes_per_s'] / (df_transformed['Flow_Packets_per_s'] + 1e-5)
-df_transformed['packet_growth_rate'] = (df_transformed['Total_Fwd_Packets'] - df_transformed['Total_Backward_Packets']) / df_transformed['Flow_Duration']
+results = []
+confusion_matrices = {}
 
-output_filename = 'cybersecurity_network_traffic_transformed.csv'
-df_transformed.to_csv(output_filename, index=False)
+for name, model in models.items():
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("model", model)
+    ])
 
-print(f"Трансформований датасет збережено у файл: {output_filename}")
+    pipeline.fit(X_train, y_train)
 
+    y_pred = pipeline.predict(X_test)
 
-plt.figure(figsize=(12, 5))
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(
+        y_test, y_pred, zero_division=0
+    )
+    recall = recall_score(
+        y_test, y_pred, zero_division=0
+    )
+    f1 = f1_score(
+        y_test, y_pred, zero_division=0
+    )
 
-plt.subplot(1, 2, 1)
-sns.histplot(df['Flow_Duration'], kde=True, color='blue')
-plt.title('Розподіл тривалості потоку (Flow_Duration)')
+    cm = confusion_matrix(
+        y_test,
+        y_pred,
+        labels=[0, 1]
+    )
 
-plt.subplot(1, 2, 2)
-sns.histplot(df['Flow_Bytes_per_s'], kde=True, color='green')
-plt.title('Розподіл інтенсивності трафіку (Flow_Bytes_per_s)')
+    confusion_matrices[name] = cm
 
-plt.tight_layout()
-plt.show()
+    tn, fp, fn, tp = cm.ravel()
 
-plt.figure(figsize=(8, 5))
-sns.boxplot(x='Protocol', y='Flow_Bytes_per_s', data=df)
-plt.title('Порівняння інтенсивності трафіку (Flow_Bytes_per_s) за протоколами')
-plt.show()
+    results.append({
+        "Модель": name,
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Recall": recall,
+        "F1-Score": f1,
+        "TN": tn,
+        "FP": fp,
+        "FN": fn,
+        "TP": tp
+    })
 
-pairplot_cols = ['Flow_Duration', 'Total_Fwd_Packets', 'Total_Backward_Packets', 'Flow_Bytes_per_s']
-sns.pairplot(df[pairplot_cols], diag_kind='kde')
-plt.show()
+results_df = pd.DataFrame(results)
 
+results_df = results_df.sort_values(
+    by=["FN", "Recall", "F1-Score"],
+    ascending=[True, False, False]
+)
 
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5: Лінійні графіки трендів
-# -------------------------------------------------------------
-top_ports = [443, 80, 53]
-df_selected = df_cleaned[df_cleaned['Destination_Port'].isin(top_ports)].copy()
-df_selected['Stream_ID'] = df_selected.groupby('Destination_Port').cumcount()
+print("РЕЗУЛЬТАТИ ОЦІНЮВАННЯ МОДЕЛЕЙ")
 
-plt.figure(figsize=(14, 6))
+display(
+    results_df.style.format({
+        "Accuracy": "{:.4f}",
+        "Precision": "{:.4f}",
+        "Recall": "{:.4f}",
+        "F1-Score": "{:.4f}"
+    })
+)
 
-# Тренд Flow_Duration
-plt.subplot(1, 2, 1)
-sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Duration', hue='Destination_Port', palette='Set2')
-plt.title("Тренд Flow Duration для портів (443, 80, 53)")
-plt.xlabel("Порядковий номер потоку")
-plt.ylabel("Flow Duration")
+results_df.to_csv(
+    folder / "model_evaluation_results.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
 
+sns.set_theme(style="white")
 
+for name, cm in confusion_matrices.items():
+    plt.figure(figsize=(7, 5))
 
-# Тренд Flow_Bytes_per_s
-plt.subplot(1, 2, 2)
-sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Bytes_per_s', hue='Destination_Port', palette='Set2')
-plt.title("Тренд Flow Bytes/s для портів (443, 80, 53)")
-plt.xlabel("Порядковий номер потоку")
-plt.ylabel("Flow Bytes per second")
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["BENIGN", "ATTACK"],
+        yticklabels=["BENIGN", "ATTACK"]
+    )
 
-plt.tight_layout()
-plt.savefig("trends_ports_analysis.png")
-print("Графік трендів збережено у файл trends_ports_analysis.png")
-plt.show()
+    plt.title(f"Матриця плутанини — {name}")
+    plt.xlabel("Передбачений клас")
+    plt.ylabel("Фактичний клас")
+    plt.tight_layout()
 
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5: Бар-чарт топ-10
-# -------------------------------------------------------------
-top10_ports = df_cleaned.groupby('Destination_Port')['Flow_Bytes_per_s'].mean().nlargest(10).reset_index()
+    filename = (
+        name.lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        + "_confusion_matrix.png"
+    )
+
+    plt.savefig(
+        folder / filename,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.show()
+
+min_fn = results_df["FN"].min()
+
+best_models = results_df.loc[
+    results_df["FN"] == min_fn,
+    "Модель"
+].tolist()
+
+print("\nМОДЕЛЬ ІЗ НАЙМЕНШОЮ КІЛЬКІСТЮ ПРОПУЩЕНИХ АТАК")
+
+for model_name in best_models:
+    print(model_name)
+
+print(f"Кількість пропущених атак (FN): {min_fn}")
+
+print("\nПОРІВНЯННЯ RECALL І FN")
+
+display(
+    results_df[
+        ["Модель", "Recall", "FN"]
+    ].reset_index(drop=True)
+)
 
 plt.figure(figsize=(10, 5))
-sns.barplot(data=top10_ports, x='Destination_Port', y='Flow_Bytes_per_s', palette='viridis', order=top10_ports['Destination_Port'])
-plt.title("Топ-10 Destination_Port за середнім Flow_Bytes_per_s")
-plt.xlabel("Destination Port")
-plt.ylabel("Середній Flow Bytes/s")
 
+plt.bar(
+    results_df["Модель"],
+    results_df["FN"]
+)
+
+plt.title("Кількість пропущених атак різними моделями")
+plt.xlabel("Модель")
+plt.ylabel("Кількість пропущених атак (FN)")
+plt.xticks(rotation=15)
 plt.tight_layout()
-plt.savefig("top10_ports_traffic.png")
-print("Бар-чарт топ-10 портів збережено у файл top10_ports_traffic.png")
+plt.savefig(
+    folder / "models_false_negatives_comparison.png",
+    dpi=300,
+    bbox_inches="tight"
+)
 plt.show()
 
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5 Найвищі та найнижчі значення 
-# -------------------------------------------------------------
-print("\n=== Екстремальні значення метрик для портів 443, 80, 53 ===")
-for port in top_ports:
-    port_data = df_cleaned[df_cleaned['Destination_Port'] == port]
-    if not port_data.empty:
-        max_duration = port_data['Flow_Duration'].max()
-        min_duration = port_data['Flow_Duration'].min()
-        
-        max_bytes = port_data['Flow_Bytes_per_s'].max()
-        min_bytes = port_data['Flow_Bytes_per_s'].min()
-        
-        print(f"\nПорт: {port}")
-        print(f"  [Flow Duration]   Максимум: {max_duration} | Мінімум: {min_duration}")
-        print(f"  [Flow Bytes/s]    Максимум: {max_bytes} | Мінімум: {min_bytes}")
-
-
-
-
-
-folder = Path(__file__).resolve().parent
-data = pd.read_csv(folder / "cybersecurity_network_traffic_synthetic.csv")
-columns = [
-    "Flow_Duration",
-    "Total_Fwd_Packets",
-    "Total_Backward_Packets",
-    "Fwd_Packet_Length_Mean",
-    "Bwd_Packet_Length_Mean",
-    "Flow_Bytes_per_s",
-    "Flow_Packets_per_s",
-    "Flow_IAT_Mean",
-]
-numeric = data[columns].apply(pd.to_numeric, errors="coerce")
-stats = pd.DataFrame({
-    "count": numeric.count(),
-    "mean": numeric.mean(),
-    "median": numeric.median(),
-    "mode": numeric.mode(dropna=True).iloc[0],
-    "std": numeric.std(),
-    "min": numeric.min(),
-    "Q1": numeric.quantile(0.25),
-    "Q3": numeric.quantile(0.75),
-    "max": numeric.max(),
-    "skewness": numeric.skew(),
-})
-stats.index.name = "parameter"
-stats.round(3).to_csv(folder / "statystyka.csv", encoding="utf-8-sig")
-
-sns.set_theme(style="whitegrid")
-fig, axes = plt.subplots(2, 4, figsize=(18, 9))
-for ax, col in zip(axes.flat, columns):
-    sns.histplot(numeric[col].dropna(), bins=18, ax=ax, color="#3979a6", edgecolor="white")
-    ax.axvline(numeric[col].mean(), color="#d95c3f", linewidth=1.6, label="Mean")
-    ax.axvline(numeric[col].median(), color="#24684d", linewidth=1.6, linestyle="--", label="Median")
-    ax.set_title(col, fontsize=11)
-    ax.set_xlabel("")
-    ax.set_ylabel("Frequency")
-    ax.legend(fontsize=8)
-fig.suptitle("Network Traffic: Statistical Distributions", fontsize=17, fontweight="bold")
-fig.tight_layout(rect=(0, 0, 1, 0.955))
-fig.savefig(folder / "statystyka_rozpodil.png", dpi=180, bbox_inches="tight")
-plt.close(fig)
-print(stats.round(2).to_string())
-
-from pathlib import Path
-import sys
-import pandas as pd
-
-columns = [
-    "Flow_Duration",
-    "Total_Fwd_Packets",
-    "Total_Backward_Packets",
-    "Fwd_Packet_Length_Mean",
-    "Bwd_Packet_Length_Mean",
-    "Flow_Bytes_per_s",
-    "Flow_Packets_per_s",
-    "Flow_IAT_Mean",
-]
-
-source = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("cybersecurity_network_traffic_synthetic.csv")
-df = pd.read_csv(source)
-corr = df[columns].corr(method="pearson")
-
-pairs = [
-    (a, b, float(corr.loc[a, b]))
-    for i, a in enumerate(columns)
-    for b in columns[i + 1:]
-]
-
-positive = sorted((p for p in pairs if p[2] > 0), key=lambda p: -p[2])
-negative = sorted((p for p in pairs if p[2] < 0), key=lambda p: p[2])
-
-print(f"Записів: {len(df)}. Проаналізовано {len(columns)} кількісних ознак.")
-print("\nКореляційна матриця:\n", corr.round(3).to_string())
-print("\nНайсильніші позитивні зв'язки:")
-for a, b, r in positive[:3]:
-    print(f"{a} — {b}: r={r:+.3f}")
-print("\nНайсильніші негативні зв'язки:")
-for a, b, r in negative[:3]:
-    print(f"{a} — {b}: r={r:+.3f}")
-
-
-matplotlib.use("Agg")
-
-
-columns = [
-    "Flow_Duration",
-    "Total_Fwd_Packets",
-    "Total_Backward_Packets",
-    "Fwd_Packet_Length_Mean",
-    "Bwd_Packet_Length_Mean",
-    "Flow_Bytes_per_s",
-    "Flow_Packets_per_s",
-    "Flow_IAT_Mean",
-]
-labels = ["DURATION", "FWD_PKTS", "BWD_PKTS", "FWD_LEN", "BWD_LEN", "BYTES/S", "PKTS/S", "IAT"]
-
-source = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).with_name("cybersecurity_network_traffic_synthetic.csv")
-df = pd.read_csv(source)
-corr = df[columns].corr(method="pearson")
-
-plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10})
-fig, ax = plt.subplots(figsize=(9.4, 7.3), dpi=180)
-fig.patch.set_facecolor("white")
-values = corr.to_numpy()
-image = ax.imshow(values, vmin=-1, vmax=1, cmap="RdBu_r", interpolation="none")
-ax.set_xticks(range(len(labels)), labels, rotation=43, ha="right", rotation_mode="anchor")
-ax.set_yticks(range(len(labels)), labels)
-ax.tick_params(axis="both", length=0)
-ax.set_xticks(np.arange(-0.5, len(labels), 1), minor=True)
-ax.set_yticks(np.arange(-0.5, len(labels), 1), minor=True)
-ax.grid(which="minor", color="white", linewidth=1.5)
-ax.tick_params(which="minor", left=False, bottom=False)
-for i in range(len(columns)):
-    for j in range(len(columns)):
-        value = float(values[i, j])
-        ax.text(j, i, f"{value:+.3f}" if i != j else "1.000", ha="center", va="center", fontsize=9.4, color="white" if abs(value) >= 0.7 else "#15283C", fontweight="bold" if abs(value) > 0.9 else "normal")
-colorbar = fig.colorbar(image, ax=ax, fraction=0.042, pad=0.04)
-colorbar.set_label("Коефіцієнт кореляції Пірсона (r)")
-ax.set_title("Кореляційна матриця мережевого трафіку", fontweight="bold", fontsize=14, pad=14)
-fig.subplots_adjust(left=0.19, right=0.90, bottom=0.17, top=0.91)
-output = Path(__file__).with_name("corelyatsiya_heatmap.png")
-fig.savefig(output, dpi=180, bbox_inches="tight", facecolor="white")
-plt.close(fig)
-print(output)
+print("\nФайли збережено:")
+print("model_evaluation_results.csv")
+print("Матриці плутанини для кожної моделі")
+print("models_false_negatives_comparison.png")
