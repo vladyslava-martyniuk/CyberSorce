@@ -8,6 +8,13 @@ from sklearn.preprocessing import PolynomialFeatures
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 import numpy as np
 
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
+
 df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
 
 
@@ -368,4 +375,68 @@ print(reg_results_df)
 best_reg_model = reg_results_df["RMSE"].idxmin()
 print(
     f"\nНайкраща модель для прогнозування: **{best_reg_model}** (найменша похибка RMSE)."
+)
+
+
+X_clf = df_transformed.drop(columns=['Flow_Bytes_per_s', 'Label'], errors='ignore')
+X_clf = X_clf.select_dtypes(include=['number'])
+
+
+if 'Label' in df_transformed.columns:
+    y_clf = df_transformed['Label']
+elif 'Label' in df.columns:
+    y_clf = df['Label']
+else:
+    raise ValueError("Цільова змінна 'Label' не знайдена у датасеті.")
+
+
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+
+classification_models = {
+    "Logistic Regression": Pipeline([
+        ('scaler', StandardScaler()), 
+        ('clf', LogisticRegression(max_iter=1000, random_state=42))
+    ]),
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "K-Nearest Neighbors": Pipeline([
+        ('scaler', StandardScaler()), 
+        ('clf', KNeighborsClassifier(n_neighbors=5))
+    ])
+}
+
+cv_results = {}
+
+print("\n=== ПРОЦЕС КРОС-ВАЛІДАЦІЇ (5-Fold, F1-Score) ===")
+
+for model_name, model in classification_models.items():
+
+    scores = cross_val_score(model, X_clf, y_clf, cv=skf, scoring='f1_macro')
+    
+    mean_f1 = scores.mean()
+    std_f1 = scores.std()
+    
+    cv_results[model_name] = {
+        "Mean F1-Score": mean_f1,
+        "Std (Standard Deviation)": std_f1,
+        "Scores": scores
+    }
+    
+    print(f"Модель: {model_name}")
+    print(f"  > Середній F1-Score: {mean_f1}")
+    print(f"  > Стандартне відхилення (Std): {std_f1}\n")
+
+cv_summary_df = pd.DataFrame({
+    "Mean F1-Score": [res["Mean F1-Score"] for res in cv_results.values()],
+    "Std": [res["Std (Standard Deviation)"] for res in cv_results.values()]
+}, index=cv_results.keys())
+
+print("\n=== ПІДСУМОК КРОС-ВАЛІДАЦІЇ КЛАСИФІКАТОРІВ ===")
+print(cv_summary_df)
+
+
+most_stable_model = cv_summary_df["Std"].idxmin()
+print(
+    f"\nНайстабільніша модель (найменше стандартне відхилення): {most_stable_model} "
+    f"з показником Std = {cv_summary_df.loc[most_stable_model, 'Std']}"
 )
