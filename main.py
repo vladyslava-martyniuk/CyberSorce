@@ -5,6 +5,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.linear_model import Lasso, LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
 
 df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
 
@@ -307,4 +309,63 @@ print(results_df)
 best_model_name = results_df["MSE"].idxmin()
 print(
     f"\nНайкраща модель за показником MSE: **{best_model_name}** з мін. помилкою."
+)
+
+
+regression_results = {}
+
+
+# -------------------------------------------------------------
+#                       Linear Regression
+# -------------------------------------------------------------
+y_pred_lr = lr.predict(X_test)
+regression_results["Linear Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lr),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_lr)),
+    "MAE": mean_absolute_error(y_test, y_pred_lr),
+    "R2": r2_score(y_test, y_pred_lr),
+}
+
+# -------------------------------------------------------------
+#                       Polynomial Regression (deg=2)
+# -------------------------------------------------------------
+y_pred_poly = poly_lr.predict(X_test_poly)
+regression_results["Polynomial Regression (deg=2)"] = {
+    "MSE": mean_squared_error(y_test, y_pred_poly),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_poly)),
+    "MAE": mean_absolute_error(y_test, y_pred_poly),
+    "R2": r2_score(y_test, y_pred_poly),
+}
+
+# -------------------------------------------------------------
+#                       Ridge Regression
+# -------------------------------------------------------------
+y_pred_ridge = ridge.predict(X_test)
+regression_results["Ridge Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_ridge),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_ridge)),
+    "MAE": mean_absolute_error(y_test, y_pred_ridge),
+    "R2": r2_score(y_test, y_pred_ridge),
+}
+
+# -------------------------------------------------------------
+#                       Lasso Regression
+# -------------------------------------------------------------
+y_pred_lasso = lasso.predict(X_test)
+regression_results["Lasso Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lasso),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_lasso)),
+    "MAE": mean_absolute_error(y_test, y_pred_lasso),
+    "R2": r2_score(y_test, y_pred_lasso),
+}
+
+
+reg_results_df = pd.DataFrame(regression_results).T
+print("\n=== ПОРІВНЯННЯ РЕГРЕСІЙНИХ МОДЕЛЕЙ ===")
+print(reg_results_df)
+
+
+best_reg_model = reg_results_df["RMSE"].idxmin()
+print(
+    f"\nНайкраща модель для прогнозування: **{best_reg_model}** (найменша похибка RMSE)."
 )
