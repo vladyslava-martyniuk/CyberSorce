@@ -11,7 +11,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import (
     accuracy_score,
@@ -182,7 +182,7 @@ print(df_transformed["Label"].value_counts().rename({
 }))
 
 # -------------------------------------------------------------
-# ЗАВДАННЯ 1. КЛАСИФІКАЦІЯ МЕРЕЖЕВОГО ТРАФІКУ
+# ЗАВДАННЯ 1. КЛАСИФІКАЦІЯ МЕРЕЖЕВОГО ТРАФІКУ (Включно з Gradient Boosting)
 # -------------------------------------------------------------
 
 X = df_transformed.drop(columns=["Label"])
@@ -246,6 +246,9 @@ classification_models = {
     ),
     "k-NN": KNeighborsClassifier(
         n_neighbors=5
+    ),
+    "Gradient Boosting": GradientBoostingClassifier(
+        random_state=42
     )
 }
 
@@ -378,6 +381,16 @@ plt.savefig(
 plt.show()
 plt.close()
 
+# Порівняння Random Forest та Gradient Boosting (після створення classification_df)
+if "Random Forest" in classification_df["Модель"].values and "Gradient Boosting" in classification_df["Модель"].values:
+    rf_f1 = classification_df.loc[classification_df["Модель"] == "Random Forest", "F1-Score"].values[0]
+    gb_f1 = classification_df.loc[classification_df["Модель"] == "Gradient Boosting", "F1-Score"].values[0]
+    print(f"\nПорівняння Random Forest (F1: {rf_f1:.4f}) та Gradient Boosting (F1: {gb_f1:.4f}):")
+    if gb_f1 > rf_f1:
+        print("🏆 Gradient Boosting показав вищу ефективність за F1-Score!")
+    else:
+        print("🏆 Random Forest показав кращу або рівну ефективність за F1-Score!")
+
 # -------------------------------------------------------------
 # ЗАВДАННЯ 2. ЕКСТРЕМАЛЬНІ ЗНАЧЕННЯ ДЛЯ ПОРТІВ
 # -------------------------------------------------------------
@@ -428,7 +441,7 @@ else:
     )
 
 # -------------------------------------------------------------
-# ЗАВДАННЯ 3. РЕГРЕСІЯ ДЛЯ FLOW_BYTES_PER_S
+# ЗАВДАННЯ 3. РЕГРЕСІЯ ДЛЯ FLOW_BYTES_PER_S ТА ФІНАЛЬНІ ПРОГНОЗИ
 # -------------------------------------------------------------
 
 print("\nРЕГРЕСІЙНИЙ АНАЛІЗ")
@@ -513,6 +526,7 @@ else:
             }
 
             regression_results = {}
+            fitted_reg_models = {}
 
             for name, model in regression_models.items():
                 model.fit(
@@ -523,6 +537,8 @@ else:
                 y_pred_reg = model.predict(
                     X_test_reg_scaled
                 )
+                
+                fitted_reg_models[name] = model
 
                 regression_results[name] = {
                     "MSE": mean_squared_error(
@@ -558,6 +574,8 @@ else:
             y_pred_poly = poly_lr.predict(
                 X_test_poly
             )
+            
+            fitted_reg_models["Polynomial Regression (degree 2)"] = (poly_lr, poly)
 
             regression_results[
                 "Polynomial Regression (degree 2)"
@@ -606,6 +624,15 @@ else:
                 f"R²: {regression_df_results.loc[best_model_name, 'R2']:.6f}"
             )
 
+            # Генерація прогнозів для найкращої регресійної моделі (Завдання 6)
+            if "Polynomial" in best_model_name:
+                best_poly_obj = fitted_reg_models[best_model_name][1]
+                best_est_obj = fitted_reg_models[best_model_name][0]
+                best_y_pred = best_est_obj.predict(best_poly_obj.transform(X_test_reg_scaled))
+            else:
+                best_y_pred = fitted_reg_models[best_model_name].predict(X_test_reg_scaled)
+
+            # Графік порівняння MSE моделей
             plt.figure(figsize=(10, 5))
 
             plt.bar(
@@ -628,6 +655,31 @@ else:
             plt.show()
             plt.close()
 
+            # Графік Predicted vs Actual для найкращої регресії (Завдання 6)
+            plt.figure(figsize=(6, 6))
+            plt.scatter(y_test_reg, best_y_pred, alpha=0.4, color='teal')
+            plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--', lw=2)
+            plt.title(f"Predicted vs Actual ({best_model_name})")
+            plt.xlabel("Реальні значення (Actual)")
+            plt.ylabel("Прогнозовані значення (Predicted)")
+            plt.tight_layout()
+            plt.savefig(folder / "regression_pred_vs_actual.png", dpi=300, bbox_inches="tight")
+            plt.show()
+            plt.close()
+
+            # Гістограма розподілу помилок / залишків (Residuals) (Завдання 6)
+            residuals = y_test_reg - best_y_pred
+            plt.figure(figsize=(8, 4))
+            sns.histplot(residuals, kde=True, color='crimson', bins=30)
+            plt.title(f"Розподіл помилок (Residuals) — {best_model_name}")
+            plt.xlabel("Помилка (Actual - Predicted)")
+            plt.ylabel("Кількість")
+            plt.tight_layout()
+            plt.savefig(folder / "regression_residuals.png", dpi=300, bbox_inches="tight")
+            plt.show()
+            plt.close()
+
 print("\nРоботу завершено.")
 print("Результати класифікації: model_evaluation_results.csv")
 print("Результати регресії: regression_evaluation_results.csv")
+print("Збережені графіки: regression_pred_vs_actual.png, regression_residuals.png")
