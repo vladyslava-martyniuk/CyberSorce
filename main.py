@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split
@@ -15,302 +16,450 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-df = pd.read_csv("cybersecurity_network_traffic_synthetic.csv")
+from pathlib import Path
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, OneHotEncoder, PolynomialFeatures
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LinearRegression, LogisticRegression, Ridge, Lasso
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    confusion_matrix,
+    mean_squared_error,
+    r2_score
+)
 
+folder = Path.cwd()
 
-def check_data_quality(df):
-    """
-    Перевіряє наявність пропущених значень і дублікатів.
-    """
-    if df.empty:
-        print("DataFrame порожній. Перевірка неможлива.")
-        return
-
-    print("Кількість пропущених значень у кожному стовпці:")
-    print(df.isnull().sum())
-
-    print(f"\nЗагальна кількість пропущених значень: {df.isnull().sum().sum()}")
-    print(f"Кількість дублікатів: {df.duplicated().sum()}")
-
-
-def clean_data_quality(df):
-    """
-    Заповнює пропущені значення медіаною для числових стовпців
-    і найчастішим значенням для текстових.
-    Видаляє дублікати.
-    """
-    if df.empty:
-        print("DataFrame порожній. Очищення неможливе.")
-        return df.copy()
-
-    df_cleaned = df.copy()
-
-    rows_before = len(df_cleaned)
-
-   
-    for column in df_cleaned.columns:
-        missing_count = df_cleaned[column].isnull().sum()
-
-        if missing_count > 0:
-            if pd.api.types.is_numeric_dtype(df_cleaned[column]):
-                
-                median_value = df_cleaned[column].median()
-
-                if pd.notna(median_value):
-                    df_cleaned[column] = df_cleaned[column].fillna(
-                        median_value
-                    )
-                else:
-                    print(
-                        f"Увага: стовпець {column} не має "
-                        "доступних числових значень для обчислення медіани."
-                    )
-
-            else:
-                
-                mode_values = df_cleaned[column].mode()
-
-                if not mode_values.empty:
-                    df_cleaned[column] = df_cleaned[column].fillna(
-                        mode_values[0]
-                    )
-                else:
-                    print(
-                        f"Увага: стовпець {column} не має "
-                        "значень для заповнення пропусків."
-                    )
-
-    df_cleaned = df_cleaned.drop_duplicates()
-
-    rows_after = len(df_cleaned)
-
-    print(f"\nКількість рядків до очищення: {rows_before}")
-    print(f"Кількість рядків після очищення: {rows_after}")
-    print(f"Видалено дублікатів: {rows_before - rows_after}")
-
-    print(
-        "\nКількість пропущених значень після очищення:",
-        df_cleaned.isnull().sum().sum()
-    )
-
-    return df_cleaned
-
-
-
-print("=== ПЕРЕВІРКА ЯКОСТІ ДАНИХ ===")
-check_data_quality(df)
-
-
-print("\n=== ОЧИЩЕННЯ ДАНИХ ===")
-df_cleaned = clean_data_quality(df)
-
-
-df_cleaned.to_csv(
+possible_files = [
     "cybersecurity_network_traffic_cleaned.csv",
-    index=False
-)
-
-print("\nОчищений датасет збережено.")
-
-sns.set_theme(style="darkgrid")
-plt.figure(figsize=(10, 6))
-
-sns.histplot(
-    data=df_cleaned,
-    x="Flow_Duration",
-    hue="Label",
-    multiple="dodge",
-    bins=20
-)
-
-plt.title(
-    "Розподіл тривалості мережевих потоків за типами трафіку"
-)
-plt.xlabel("Тривалість потоку (Flow Duration)")
-plt.ylabel("Кількість")
-
-plt.savefig("traffic_visualization.png")
-print("Графік успішно збережено у файл traffic_visualization та готовий до звіту")
-plt.show()
-
-
-df_transformed = pd.get_dummies(
-    df, 
-    columns=['Protocol', 'Connection_State'], 
-    prefix=['Protocol', 'State'], 
-    dtype=int
-)
-
-
-df_transformed['fwd_bwd_packet_ratio'] = df_transformed['Total_Fwd_Packets'] / (df_transformed['Total_Backward_Packets'] + 1e-5)
-df_transformed['bytes_per_packet_mean'] = df_transformed['Flow_Bytes_per_s'] / (df_transformed['Flow_Packets_per_s'] + 1e-5)
-df_transformed['packet_growth_rate'] = (df_transformed['Total_Fwd_Packets'] - df_transformed['Total_Backward_Packets']) / df_transformed['Flow_Duration']
-
-output_filename = 'cybersecurity_network_traffic_transformed.csv'
-df_transformed.to_csv(output_filename, index=False)
-
-print(f"Трансформований датасет збережено у файл: {output_filename}")
-
-
-plt.figure(figsize=(12, 5))
-
-plt.subplot(1, 2, 1)
-sns.histplot(df['Flow_Duration'], kde=True, color='blue')
-plt.title('Розподіл тривалості потоку (Flow_Duration)')
-
-plt.subplot(1, 2, 2)
-sns.histplot(df['Flow_Bytes_per_s'], kde=True, color='green')
-plt.title('Розподіл інтенсивності трафіку (Flow_Bytes_per_s)')
-
-plt.tight_layout()
-plt.show()
-
-plt.figure(figsize=(8, 5))
-sns.boxplot(x='Protocol', y='Flow_Bytes_per_s', data=df)
-plt.title('Порівняння інтенсивності трафіку (Flow_Bytes_per_s) за протоколами')
-plt.show()
-
-pairplot_cols = ['Flow_Duration', 'Total_Fwd_Packets', 'Total_Backward_Packets', 'Flow_Bytes_per_s']
-sns.pairplot(df[pairplot_cols], diag_kind='kde')
-plt.show()
-
-
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5: Лінійні графіки трендів
-# -------------------------------------------------------------
-top_ports = [443, 80, 53]
-df_selected = df_cleaned[df_cleaned['Destination_Port'].isin(top_ports)].copy()
-df_selected['Stream_ID'] = df_selected.groupby('Destination_Port').cumcount()
-
-plt.figure(figsize=(14, 6))
-
-# Тренд Flow_Duration
-plt.subplot(1, 2, 1)
-sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Duration', hue='Destination_Port', palette='Set2')
-plt.title("Тренд Flow Duration для портів (443, 80, 53)")
-plt.xlabel("Порядковий номер потоку")
-plt.ylabel("Flow Duration")
-
-
-
-# Тренд Flow_Bytes_per_s
-plt.subplot(1, 2, 2)
-sns.lineplot(data=df_selected, x='Stream_ID', y='Flow_Bytes_per_s', hue='Destination_Port', palette='Set2')
-plt.title("Тренд Flow Bytes/s для портів (443, 80, 53)")
-plt.xlabel("Порядковий номер потоку")
-plt.ylabel("Flow Bytes per second")
-
-plt.tight_layout()
-plt.savefig("trends_ports_analysis.png")
-print("Графік трендів збережено у файл trends_ports_analysis.png")
-plt.show()
-
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5: Бар-чарт топ-10
-# -------------------------------------------------------------
-top10_ports = df_cleaned.groupby('Destination_Port')['Flow_Bytes_per_s'].mean().nlargest(10).reset_index()
-
-plt.figure(figsize=(10, 5))
-sns.barplot(data=top10_ports, x='Destination_Port', y='Flow_Bytes_per_s', palette='viridis', order=top10_ports['Destination_Port'])
-plt.title("Топ-10 Destination_Port за середнім Flow_Bytes_per_s")
-plt.xlabel("Destination Port")
-plt.ylabel("Середній Flow Bytes/s")
-
-plt.tight_layout()
-plt.savefig("top10_ports_traffic.png")
-print("Бар-чарт топ-10 портів збережено у файл top10_ports_traffic.png")
-plt.show()
-
-# -------------------------------------------------------------
-# ЗАВДАННЯ 5 Найвищі та найнижчі значення 
-# -------------------------------------------------------------
-print("\n=== Екстремальні значення метрик для портів 443, 80, 53 ===")
-for port in top_ports:
-    port_data = df_cleaned[df_cleaned['Destination_Port'] == port]
-    if not port_data.empty:
-        max_duration = port_data['Flow_Duration'].max()
-        min_duration = port_data['Flow_Duration'].min()
-        
-        max_bytes = port_data['Flow_Bytes_per_s'].max()
-        min_bytes = port_data['Flow_Bytes_per_s'].min()
-        
-        print(f"\nПорт: {port}")
-        print(f"  [Flow Duration]   Максимум: {max_duration} | Мінімум: {min_duration}")
-        print(f"  [Flow Bytes/s]    Максимум: {max_bytes} | Мінімум: {min_bytes}")
-
-
-features_cols = [
-    'Flow_Duration',
-    'Total_Fwd_Packets',
-    'Total_Backward_Packets',
-    'fwd_bwd_packet_ratio',
-    'bytes_per_packet_mean',
-    'packet_growth_rate',
+    "cybersecurity_network_traffic.csv",
+    "cybersecurity_network_traffic_synthetic.csv"
 ]
 
-X = df_transformed.drop(columns=['Flow_Bytes_per_s', 'Label'], errors='ignore')
-X = X.select_dtypes(include=['number'])
-
-y = df_transformed['Flow_Bytes_per_s']
-
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+data_path = next(
+    (folder / file for file in possible_files if (folder / file).exists()),
+    None
 )
 
-results = {}
+if data_path is None:
+    raise FileNotFoundError(
+        "Не знайдено CSV-файл датасету в поточній папці."
+    )
 
-# -------------------------------------------------------------
-#                       Linear Regression
-# -------------------------------------------------------------
-lr = LinearRegression()
-lr.fit(X_train, y_train)
-y_pred_lr = lr.predict(X_test)
-results["Linear Regression"] = {
-    "MSE": mean_squared_error(y_test, y_pred_lr),
-    "R2": r2_score(y_test, y_pred_lr),
+df = pd.read_csv(data_path)
+df.columns = df.columns.str.strip()
+
+column_aliases = {
+    "destinationport": "Destination_Port",
+    "destination_port": "Destination_Port",
+    "flowduration": "Flow_Duration",
+    "flow_duration": "Flow_Duration",
+    "flowbytespers": "Flow_Bytes_per_s",
+    "flow_bytes_per_s": "Flow_Bytes_per_s",
+    "totalfw dpackets": "Total_Fwd_Packets",
+    "totalfwdpackets": "Total_Fwd_Packets",
+    "total_fwd_packets": "Total_Fwd_Packets",
+    "totalbackwardpackets": "Total_Backward_Packets",
+    "total_backward_packets": "Total_Backward_Packets",
+    "totalbytessent": "Total Bytes Sent",
+    "total_bytes_sent": "Total Bytes Sent",
+    "totalbytesreceived": "Total Bytes Received",
+    "total_bytes_received": "Total Bytes Received",
+    "duration": "duration",
+    "label": "Label"
 }
 
-# -------------------------------------------------------------
-#              Polynomial Regression (ступінь 2)
-# -------------------------------------------------------------
-poly = PolynomialFeatures(degree=2, include_bias=False)
-X_train_poly = poly.fit_transform(X_train)
-X_test_poly = poly.transform(X_test)
+rename_columns = {}
 
-poly_lr = LinearRegression()
-poly_lr.fit(X_train_poly, y_train)
-y_pred_poly = poly_lr.predict(X_test_poly)
-results["Polynomial Regression (deg=2)"] = {
-    "MSE": mean_squared_error(y_test, y_pred_poly),
-    "R2": r2_score(y_test, y_pred_poly),
+for column in df.columns:
+    normalized = column.strip().lower().replace(" ", "").replace("-", "")
+    normalized_underscore = column.strip().lower().replace(" ", "_")
+
+    if normalized in column_aliases:
+        rename_columns[column] = column_aliases[normalized]
+    elif normalized_underscore in column_aliases:
+        rename_columns[column] = column_aliases[normalized_underscore]
+
+df = df.rename(columns=rename_columns)
+
+target_column = next(
+    (column for column in df.columns if column.lower() == "label"),
+    None
+)
+
+if target_column is None:
+    raise ValueError("У датасеті не знайдено стовпець Label.")
+
+df = df.dropna(subset=[target_column]).drop_duplicates().copy()
+
+df[target_column] = (
+    df[target_column]
+    .astype(str)
+    .str.strip()
+    .str.upper()
+)
+
+df[target_column] = df[target_column].replace({
+    "BENIGN": 0,
+    "ATTACK": 1
+})
+
+if not set(df[target_column].unique()).issubset({0, 1}):
+    raise ValueError(
+        "У Label мають бути лише BENIGN і ATTACK. "
+        "Перевір назви класів у датасеті."
+    )
+
+df[target_column] = df[target_column].astype(int)
+
+if df[target_column].nunique() < 2:
+    raise ValueError(
+        "Для класифікації потрібні обидва класи: BENIGN та ATTACK."
+    )
+
+df_cleaned = df.copy()
+
+if {
+    "Total Bytes Sent",
+    "Total Bytes Received"
+}.issubset(df_cleaned.columns):
+    df_cleaned["total_bytes"] = (
+        df_cleaned["Total Bytes Sent"]
+        + df_cleaned["Total Bytes Received"]
+    )
+
+if {
+    "Total_Fwd_Packets",
+    "Total_Backward_Packets"
+}.issubset(df_cleaned.columns):
+    df_cleaned["total_packets"] = (
+        df_cleaned["Total_Fwd_Packets"]
+        + df_cleaned["Total_Backward_Packets"]
+    )
+
+if {
+    "Total_Fwd_Packets",
+    "Total_Backward_Packets"
+}.issubset(df_cleaned.columns):
+    df_cleaned["fwd_bwd_packet_ratio"] = (
+        df_cleaned["Total_Fwd_Packets"]
+        / df_cleaned["Total_Backward_Packets"].replace(0, np.nan)
+    )
+
+if {
+    "total_bytes",
+    "total_packets"
+}.issubset(df_cleaned.columns):
+    df_cleaned["bytes_per_packet_mean"] = (
+        df_cleaned["total_bytes"]
+        / df_cleaned["total_packets"].replace(0, np.nan)
+    )
+
+if {
+    "total_packets",
+    "Flow_Duration"
+}.issubset(df_cleaned.columns):
+    df_cleaned["packet_growth_rate"] = (
+        df_cleaned["total_packets"]
+        / df_cleaned["Flow_Duration"].replace(0, np.nan)
+    )
+
+if {
+    "total_bytes",
+    "Flow_Duration"
+}.issubset(df_cleaned.columns):
+    df_cleaned["Flow_Bytes_per_s"] = (
+        df_cleaned["total_bytes"]
+        / df_cleaned["Flow_Duration"].replace(0, np.nan)
+    )
+
+df_cleaned = df_cleaned.replace([np.inf, -np.inf], np.nan)
+
+df_transformed = df_cleaned.copy()
+
+print("РОЗМІР ДАТАСЕТУ")
+print(f"Кількість рядків: {df_transformed.shape[0]}")
+print(f"Кількість стовпців: {df_transformed.shape[1]}")
+print("\nРОЗПОДІЛ КЛАСІВ")
+print(df_transformed["Label"].value_counts().rename({
+    0: "BENIGN",
+    1: "ATTACK"
+}))
+
+# -------------------------------------------------------------
+# ЗАВДАННЯ 1. КЛАСИФІКАЦІЯ МЕРЕЖЕВОГО ТРАФІКУ (Включно з Gradient Boosting)
+# -------------------------------------------------------------
+
+X = df_transformed.drop(columns=["Label"])
+y = df_transformed["Label"]
+
+X = X.replace([np.inf, -np.inf], np.nan)
+
+numeric_features = X.select_dtypes(
+    include=["number"]
+).columns.tolist()
+
+categorical_features = X.select_dtypes(
+    exclude=["number"]
+).columns.tolist()
+
+transformers = []
+
+if numeric_features:
+    numeric_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+
+    transformers.append(
+        ("numeric", numeric_pipeline, numeric_features)
+    )
+
+if categorical_features:
+    categorical_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("encoder", OneHotEncoder(handle_unknown="ignore"))
+    ])
+
+    transformers.append(
+        ("categorical", categorical_pipeline, categorical_features)
+    )
+
+preprocessor = ColumnTransformer(
+    transformers=transformers
+)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=0.2,
+    random_state=42,
+    stratify=y
+)
+
+classification_models = {
+    "Logistic Regression": LogisticRegression(
+        max_iter=2000,
+        random_state=42
+    ),
+    "Decision Tree": DecisionTreeClassifier(
+        random_state=42
+    ),
+    "Random Forest": RandomForestClassifier(
+        n_estimators=100,
+        random_state=42
+    ),
+    "k-NN": KNeighborsClassifier(
+        n_neighbors=5
+    ),
+    "Gradient Boosting": GradientBoostingClassifier(
+        random_state=42
+    )
 }
 
-# -------------------------------------------------------------
-#                       Ridge Regression
-# -------------------------------------------------------------
-ridge = Ridge(alpha=1.0, random_state=42)
-ridge.fit(X_train, y_train)
-y_pred_ridge = ridge.predict(X_test)
-results["Ridge Regression"] = {
-    "MSE": mean_squared_error(y_test, y_pred_ridge),
-    "R2": r2_score(y_test, y_pred_ridge),
-}
+classification_results = []
+confusion_matrices = {}
+
+for name, model in classification_models.items():
+    pipeline = Pipeline([
+        ("preprocessor", preprocessor),
+        ("model", model)
+    ])
+
+    pipeline.fit(X_train, y_train)
+    y_pred = pipeline.predict(X_test)
+
+    cm = confusion_matrix(
+        y_test,
+        y_pred,
+        labels=[0, 1]
+    )
+
+    tn, fp, fn, tp = cm.ravel()
+    confusion_matrices[name] = cm
+
+    classification_results.append({
+        "Модель": name,
+        "Accuracy": accuracy_score(y_test, y_pred),
+        "Precision": precision_score(
+            y_test, y_pred, zero_division=0
+        ),
+        "Recall": recall_score(
+            y_test, y_pred, zero_division=0
+        ),
+        "F1-Score": f1_score(
+            y_test, y_pred, zero_division=0
+        ),
+        "TN": tn,
+        "FP": fp,
+        "FN": fn,
+        "TP": tp
+    })
+
+classification_df = pd.DataFrame(classification_results)
+
+classification_df = classification_df.sort_values(
+    by=["FN", "Recall", "F1-Score"],
+    ascending=[True, False, False]
+)
+
+print("\nРЕЗУЛЬТАТИ КЛАСИФІКАЦІЇ")
+print(classification_df.to_string(index=False, float_format=lambda x: f"{x:.4f}"))
+
+classification_df.to_csv(
+    folder / "model_evaluation_results.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+sns.set_theme(style="white")
+
+for name, cm in confusion_matrices.items():
+    plt.figure(figsize=(7, 5))
+
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=["BENIGN", "ATTACK"],
+        yticklabels=["BENIGN", "ATTACK"]
+    )
+
+    plt.title(f"Матриця плутанини — {name}")
+    plt.xlabel("Передбачений клас")
+    plt.ylabel("Фактичний клас")
+    plt.tight_layout()
+
+    filename = (
+        name.lower()
+        .replace(" ", "_")
+        .replace("-", "_")
+        + "_confusion_matrix.png"
+    )
+
+    plt.savefig(
+        folder / filename,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+    plt.show()
+    plt.close()
+
+min_fn = classification_df["FN"].min()
+
+best_models = classification_df.loc[
+    classification_df["FN"] == min_fn,
+    "Модель"
+].tolist()
+
+print("\nМОДЕЛІ З НАЙМЕНШОЮ КІЛЬКІСТЮ ПРОПУЩЕНИХ АТАК")
+
+for model_name in best_models:
+    print(model_name)
+
+print(f"Мінімальна кількість FN: {min_fn}")
+
+print("\nПОРІВНЯННЯ RECALL І FN")
+print(
+    classification_df[
+        ["Модель", "Recall", "FN"]
+    ].to_string(index=False, float_format=lambda x: f"{x:.4f}")
+)
+
+plt.figure(figsize=(10, 5))
+plt.bar(
+    classification_df["Модель"],
+    classification_df["FN"]
+)
+plt.title("Кількість пропущених атак різними моделями")
+plt.xlabel("Модель")
+plt.ylabel("Кількість пропущених атак (FN)")
+plt.xticks(rotation=15)
+plt.tight_layout()
+plt.savefig(
+    folder / "models_false_negatives_comparison.png",
+    dpi=300,
+    bbox_inches="tight"
+)
+plt.show()
+plt.close()
+
+# Порівняння Random Forest та Gradient Boosting (після створення classification_df)
+if "Random Forest" in classification_df["Модель"].values and "Gradient Boosting" in classification_df["Модель"].values:
+    rf_f1 = classification_df.loc[classification_df["Модель"] == "Random Forest", "F1-Score"].values[0]
+    gb_f1 = classification_df.loc[classification_df["Модель"] == "Gradient Boosting", "F1-Score"].values[0]
+    print(f"\nПорівняння Random Forest (F1: {rf_f1:.4f}) та Gradient Boosting (F1: {gb_f1:.4f}):")
+    if gb_f1 > rf_f1:
+        print("🏆 Gradient Boosting показав вищу ефективність за F1-Score!")
+    else:
+        print("🏆 Random Forest показав кращу або рівну ефективність за F1-Score!")
 
 # -------------------------------------------------------------
-#                       Lasso Regression
+# ЗАВДАННЯ 2. ЕКСТРЕМАЛЬНІ ЗНАЧЕННЯ ДЛЯ ПОРТІВ
 # -------------------------------------------------------------
-lasso = Lasso(alpha=1.0, random_state=42)
-lasso.fit(X_train, y_train)
-y_pred_lasso = lasso.predict(X_test)
-results["Lasso Regression"] = {
-    "MSE": mean_squared_error(y_test, y_pred_lasso),
-    "R2": r2_score(y_test, y_pred_lasso),
-}
 
+print("\nЕКСТРЕМАЛЬНІ ЗНАЧЕННЯ ДЛЯ ПОРТІВ 443, 80, 53")
 
-results_df = pd.DataFrame(results).T
-print(results_df)
+top_ports = [443, 80, 53]
+
+required_port_columns = [
+    "Destination_Port",
+    "Flow_Duration",
+    "Flow_Bytes_per_s"
+]
+
+if all(column in df_cleaned.columns for column in required_port_columns):
+    for port in top_ports:
+        port_data = df_cleaned[
+            df_cleaned["Destination_Port"] == port
+        ]
+
+        if not port_data.empty:
+            max_duration = port_data["Flow_Duration"].max()
+            min_duration = port_data["Flow_Duration"].min()
+
+            max_bytes = port_data["Flow_Bytes_per_s"].max()
+            min_bytes = port_data["Flow_Bytes_per_s"].min()
+
+            print(f"\nПорт: {port}")
+            print(
+                f"Flow Duration — максимум: {max_duration}, "
+                f"мінімум: {min_duration}"
+            )
+            print(
+                f"Flow Bytes/s — максимум: {max_bytes}, "
+                f"мінімум: {min_bytes}"
+            )
+        else:
+            print(f"\nДля порту {port} даних немає.")
+else:
+    missing_columns = [
+        column for column in required_port_columns
+        if column not in df_cleaned.columns
+    ]
+
+    print(
+        "Завдання пропущено: у датасеті немає потрібних стовпців: "
+        + ", ".join(missing_columns)
+    )
+
+# -------------------------------------------------------------
+# ЗАВДАННЯ 3. РЕГРЕСІЯ ДЛЯ FLOW_BYTES_PER_S ТА ФІНАЛЬНІ ПРОГНОЗИ
+# -------------------------------------------------------------
+
+print("\nРЕГРЕСІЙНИЙ АНАЛІЗ")
+
+target_regression = "Flow_Bytes_per_s"
 
 
 best_model_name = results_df["MSE"].idxmin()
