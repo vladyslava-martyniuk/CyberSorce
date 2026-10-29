@@ -858,5 +858,58 @@ else:
             )
             plt.close()
 
+            if "Polynomial" in best_model_name:
+                best_poly_obj = fitted_reg_models[best_model_name][1]
+                best_est_obj = fitted_reg_models[best_model_name][0]
+                best_y_pred = best_est_obj.predict(best_poly_obj.transform(X_test_reg_scaled))
+            else:
+                best_y_pred = fitted_reg_models[best_model_name].predict(X_test_reg_scaled)
+
+           
+            plt.figure(figsize=(10, 5))
+
+            plt.bar(
+                regression_df_results.index,
+                regression_df_results["MSE"]
+            )
+
+            plt.title("Порівняння регресійних моделей за MSE")
+            plt.xlabel("Модель")
+            plt.ylabel("MSE")
+            plt.xticks(rotation=15)
+            plt.tight_layout()
+
+            plt.savefig(
+                folder / "regression_models_mse_comparison.png",
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            plt.show()
+            plt.close()
+
+         
+            plt.figure(figsize=(6, 6))
+            plt.scatter(y_test_reg, best_y_pred, alpha=0.4, color='teal')
+            plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--', lw=2)
+            plt.title(f"Predicted vs Actual ({best_model_name})")
+            plt.xlabel("Реальні значення (Actual)")
+            plt.ylabel("Прогнозовані значення (Predicted)")
+            plt.tight_layout()
+            plt.savefig(folder / "regression_pred_vs_actual.png", dpi=300, bbox_inches="tight")
+            plt.show()
+            plt.close()
+
+            residuals = y_test_reg - best_y_pred
+            plt.figure(figsize=(8, 4))
+            sns.histplot(residuals, kde=True, color='crimson', bins=30)
+            plt.title(f"Розподіл помилок (Residuals) — {best_model_name}")
+            plt.xlabel("Помилка (Actual - Predicted)")
+            plt.ylabel("Кількість")
+            plt.tight_layout()
+            plt.savefig(folder / "regression_residuals.png", dpi=300, bbox_inches="tight")
+            plt.show()
+            plt.close()
+
 print("\nУСІ ЗАВДАННЯ ЗАВЕРШЕНО")
 print(f"Результати збережено в папці: {results_folder}")
