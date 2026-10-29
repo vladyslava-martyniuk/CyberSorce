@@ -2,6 +2,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+import numpy as np
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from pathlib import Path
 from sklearn.model_selection import train_test_split
@@ -448,238 +461,131 @@ print("\nРЕГРЕСІЙНИЙ АНАЛІЗ")
 
 target_regression = "Flow_Bytes_per_s"
 
-if target_regression not in df_transformed.columns:
-    print(
-        "Регресію неможливо виконати: "
-        "у датасеті немає цільового стовпця Flow_Bytes_per_s."
-    )
+
+best_model_name = results_df["MSE"].idxmin()
+print(
+    f"\nНайкраща модель за показником MSE: **{best_model_name}** з мін. помилкою."
+)
+
+
+regression_results = {}
+
+
+# -------------------------------------------------------------
+#                       Linear Regression
+# -------------------------------------------------------------
+y_pred_lr = lr.predict(X_test)
+regression_results["Linear Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lr),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_lr)),
+    "MAE": mean_absolute_error(y_test, y_pred_lr),
+    "R2": r2_score(y_test, y_pred_lr),
+}
+
+# -------------------------------------------------------------
+#                       Polynomial Regression (deg=2)
+# -------------------------------------------------------------
+y_pred_poly = poly_lr.predict(X_test_poly)
+regression_results["Polynomial Regression (deg=2)"] = {
+    "MSE": mean_squared_error(y_test, y_pred_poly),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_poly)),
+    "MAE": mean_absolute_error(y_test, y_pred_poly),
+    "R2": r2_score(y_test, y_pred_poly),
+}
+
+# -------------------------------------------------------------
+#                       Ridge Regression
+# -------------------------------------------------------------
+y_pred_ridge = ridge.predict(X_test)
+regression_results["Ridge Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_ridge),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_ridge)),
+    "MAE": mean_absolute_error(y_test, y_pred_ridge),
+    "R2": r2_score(y_test, y_pred_ridge),
+}
+
+# -------------------------------------------------------------
+#                       Lasso Regression
+# -------------------------------------------------------------
+y_pred_lasso = lasso.predict(X_test)
+regression_results["Lasso Regression"] = {
+    "MSE": mean_squared_error(y_test, y_pred_lasso),
+    "RMSE": np.sqrt(mean_squared_error(y_test, y_pred_lasso)),
+    "MAE": mean_absolute_error(y_test, y_pred_lasso),
+    "R2": r2_score(y_test, y_pred_lasso),
+}
+
+
+reg_results_df = pd.DataFrame(regression_results).T
+print("\n=== ПОРІВНЯННЯ РЕГРЕСІЙНИХ МОДЕЛЕЙ ===")
+print(reg_results_df)
+
+
+best_reg_model = reg_results_df["RMSE"].idxmin()
+print(
+    f"\nНайкраща модель для прогнозування: **{best_reg_model}** (найменша похибка RMSE)."
+)
+
+
+X_clf = df_transformed.drop(columns=['Flow_Bytes_per_s', 'Label'], errors='ignore')
+X_clf = X_clf.select_dtypes(include=['number'])
+
+
+if 'Label' in df_transformed.columns:
+    y_clf = df_transformed['Label']
+elif 'Label' in df.columns:
+    y_clf = df['Label']
 else:
-    features_cols = [
-        "Flow_Duration",
-        "Total_Fwd_Packets",
-        "Total_Backward_Packets",
-        "fwd_bwd_packet_ratio",
-        "bytes_per_packet_mean",
-        "packet_growth_rate"
-    ]
+    raise ValueError("Цільова змінна 'Label' не знайдена у датасеті.")
 
-    available_features = [
-        column for column in features_cols
-        if column in df_transformed.columns
-    ]
 
-    if not available_features:
-        print(
-            "Регресію неможливо виконати: "
-            "не знайдено потрібних ознак."
-        )
-    else:
-        regression_df = df_transformed[
-            available_features + [target_regression]
-        ].copy()
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-        regression_df = regression_df.replace(
-            [np.inf, -np.inf],
-            np.nan
-        )
 
-        regression_df = regression_df.dropna(
-            subset=[target_regression]
-        )
+classification_models = {
+    "Logistic Regression": Pipeline([
+        ('scaler', StandardScaler()), 
+        ('clf', LogisticRegression(max_iter=1000, random_state=42))
+    ]),
+    "Random Forest": RandomForestClassifier(n_estimators=100, random_state=42),
+    "K-Nearest Neighbors": Pipeline([
+        ('scaler', StandardScaler()), 
+        ('clf', KNeighborsClassifier(n_neighbors=5))
+    ])
+}
 
-        X_reg = regression_df[available_features]
-        y_reg = regression_df[target_regression]
+cv_results = {}
 
-        valid_rows = y_reg.notna()
-        X_reg = X_reg.loc[valid_rows]
-        y_reg = y_reg.loc[valid_rows]
+print("\n=== ПРОЦЕС КРОС-ВАЛІДАЦІЇ (5-Fold, F1-Score) ===")
 
-        if len(regression_df) < 5:
-            print(
-                "Недостатньо рядків для надійного виконання регресії."
-            )
-        else:
-            X_train_reg, X_test_reg, y_train_reg, y_test_reg = train_test_split(
-                X_reg,
-                y_reg,
-                test_size=0.2,
-                random_state=42
-            )
+for model_name, model in classification_models.items():
 
-            regression_preprocessor = Pipeline([
-                ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler())
-            ])
+    scores = cross_val_score(model, X_clf, y_clf, cv=skf, scoring='f1_macro')
+    
+    mean_f1 = scores.mean()
+    std_f1 = scores.std()
+    
+    cv_results[model_name] = {
+        "Mean F1-Score": mean_f1,
+        "Std (Standard Deviation)": std_f1,
+        "Scores": scores
+    }
+    
+    print(f"Модель: {model_name}")
+    print(f"  > Середній F1-Score: {mean_f1}")
+    print(f"  > Стандартне відхилення (Std): {std_f1}\n")
 
-            X_train_reg_scaled = regression_preprocessor.fit_transform(
-                X_train_reg
-            )
+cv_summary_df = pd.DataFrame({
+    "Mean F1-Score": [res["Mean F1-Score"] for res in cv_results.values()],
+    "Std": [res["Std (Standard Deviation)"] for res in cv_results.values()]
+}, index=cv_results.keys())
 
-            X_test_reg_scaled = regression_preprocessor.transform(
-                X_test_reg
-            )
+print("\n=== ПІДСУМОК КРОС-ВАЛІДАЦІЇ КЛАСИФІКАТОРІВ ===")
+print(cv_summary_df)
 
-            regression_models = {
-                "Linear Regression": LinearRegression(),
-                "Ridge Regression": Ridge(alpha=1.0),
-                "Lasso Regression": Lasso(alpha=1.0, max_iter=10000)
-            }
 
-            regression_results = {}
-            fitted_reg_models = {}
-
-            for name, model in regression_models.items():
-                model.fit(
-                    X_train_reg_scaled,
-                    y_train_reg
-                )
-
-                y_pred_reg = model.predict(
-                    X_test_reg_scaled
-                )
-                
-                fitted_reg_models[name] = model
-
-                regression_results[name] = {
-                    "MSE": mean_squared_error(
-                        y_test_reg,
-                        y_pred_reg
-                    ),
-                    "R2": r2_score(
-                        y_test_reg,
-                        y_pred_reg
-                    )
-                }
-
-            poly = PolynomialFeatures(
-                degree=2,
-                include_bias=False
-            )
-
-            X_train_poly = poly.fit_transform(
-                X_train_reg_scaled
-            )
-
-            X_test_poly = poly.transform(
-                X_test_reg_scaled
-            )
-
-            poly_lr = LinearRegression()
-
-            poly_lr.fit(
-                X_train_poly,
-                y_train_reg
-            )
-
-            y_pred_poly = poly_lr.predict(
-                X_test_poly
-            )
-            
-            fitted_reg_models["Polynomial Regression (degree 2)"] = (poly_lr, poly)
-
-            regression_results[
-                "Polynomial Regression (degree 2)"
-            ] = {
-                "MSE": mean_squared_error(
-                    y_test_reg,
-                    y_pred_poly
-                ),
-                "R2": r2_score(
-                    y_test_reg,
-                    y_pred_poly
-                )
-            }
-
-            regression_df_results = pd.DataFrame(
-                regression_results
-            ).T
-
-            regression_df_results = regression_df_results.sort_values(
-                by="MSE"
-            )
-
-            print("\nРЕЗУЛЬТАТИ РЕГРЕСІЇ")
-            print(
-                regression_df_results.to_string(
-                    float_format=lambda x: f"{x:.6f}"
-                )
-            )
-
-            regression_df_results.to_csv(
-                folder / "regression_evaluation_results.csv",
-                encoding="utf-8-sig"
-            )
-
-            best_model_name = regression_df_results["MSE"].idxmin()
-
-            print(
-                f"\nНайкраща модель за MSE: {best_model_name}"
-            )
-
-            print(
-                f"MSE: {regression_df_results.loc[best_model_name, 'MSE']:.6f}"
-            )
-
-            print(
-                f"R²: {regression_df_results.loc[best_model_name, 'R2']:.6f}"
-            )
-
-            # Генерація прогнозів для найкращої регресійної моделі (Завдання 6)
-            if "Polynomial" in best_model_name:
-                best_poly_obj = fitted_reg_models[best_model_name][1]
-                best_est_obj = fitted_reg_models[best_model_name][0]
-                best_y_pred = best_est_obj.predict(best_poly_obj.transform(X_test_reg_scaled))
-            else:
-                best_y_pred = fitted_reg_models[best_model_name].predict(X_test_reg_scaled)
-
-            # Графік порівняння MSE моделей
-            plt.figure(figsize=(10, 5))
-
-            plt.bar(
-                regression_df_results.index,
-                regression_df_results["MSE"]
-            )
-
-            plt.title("Порівняння регресійних моделей за MSE")
-            plt.xlabel("Модель")
-            plt.ylabel("MSE")
-            plt.xticks(rotation=15)
-            plt.tight_layout()
-
-            plt.savefig(
-                folder / "regression_models_mse_comparison.png",
-                dpi=300,
-                bbox_inches="tight"
-            )
-
-            plt.show()
-            plt.close()
-
-            # Графік Predicted vs Actual для найкращої регресії (Завдання 6)
-            plt.figure(figsize=(6, 6))
-            plt.scatter(y_test_reg, best_y_pred, alpha=0.4, color='teal')
-            plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--', lw=2)
-            plt.title(f"Predicted vs Actual ({best_model_name})")
-            plt.xlabel("Реальні значення (Actual)")
-            plt.ylabel("Прогнозовані значення (Predicted)")
-            plt.tight_layout()
-            plt.savefig(folder / "regression_pred_vs_actual.png", dpi=300, bbox_inches="tight")
-            plt.show()
-            plt.close()
-
-            # Гістограма розподілу помилок / залишків (Residuals) (Завдання 6)
-            residuals = y_test_reg - best_y_pred
-            plt.figure(figsize=(8, 4))
-            sns.histplot(residuals, kde=True, color='crimson', bins=30)
-            plt.title(f"Розподіл помилок (Residuals) — {best_model_name}")
-            plt.xlabel("Помилка (Actual - Predicted)")
-            plt.ylabel("Кількість")
-            plt.tight_layout()
-            plt.savefig(folder / "regression_residuals.png", dpi=300, bbox_inches="tight")
-            plt.show()
-            plt.close()
-
-print("\nРоботу завершено.")
-print("Результати класифікації: model_evaluation_results.csv")
-print("Результати регресії: regression_evaluation_results.csv")
-print("Збережені графіки: regression_pred_vs_actual.png, regression_residuals.png")
+most_stable_model = cv_summary_df["Std"].idxmin()
+print(
+    f"\nНайстабільніша модель (найменше стандартне відхилення): {most_stable_model} "
+    f"з показником Std = {cv_summary_df.loc[most_stable_model, 'Std']}"
+)
