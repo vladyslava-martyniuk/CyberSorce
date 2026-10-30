@@ -2,20 +2,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import Lasso, LinearRegression, Ridge
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import PolynomialFeatures
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import numpy as np
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score, StratifiedKFold
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-
+import matplotlib
+matplotlib.use("Agg")
 from pathlib import Path
 from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, PolynomialFeatures
@@ -217,6 +205,7 @@ if numeric_features:
         ("imputer", SimpleImputer(strategy="median")),
         ("scaler", StandardScaler())
     ])
+
     transformers.append(
         ("numeric", numeric_pipeline, numeric_features)
     )
@@ -226,6 +215,7 @@ if categorical_features:
         ("imputer", SimpleImputer(strategy="most_frequent")),
         ("encoder", OneHotEncoder(handle_unknown="ignore"))
     ])
+
     transformers.append(
         ("categorical", categorical_pipeline, categorical_features)
     )
@@ -610,10 +600,6 @@ else:
             subset=[target_regression]
         )
 
-        regression_df = regression_df[
-            regression_df[target_regression].notna()
-        ]
-
         if len(regression_df) < 5:
             print("Недостатньо рядків для регресії.")
         else:
@@ -635,6 +621,7 @@ else:
             X_train_reg_scaled = regression_preprocessor.fit_transform(
                 X_train_reg
             )
+
             X_test_reg_scaled = regression_preprocessor.transform(
                 X_test_reg
             )
@@ -683,6 +670,7 @@ else:
                 poly_lr,
                 poly
             )
+
             regression_predictions["Polynomial Regression (degree 2)"] = (
                 y_pred_poly
             )
@@ -755,14 +743,17 @@ else:
                 alpha=0.4,
                 color="teal"
             )
+
             min_value = min(y_test_reg.min(), np.min(best_y_pred))
             max_value = max(y_test_reg.max(), np.max(best_y_pred))
+
             plt.plot(
                 [min_value, max_value],
                 [min_value, max_value],
                 "r--",
                 linewidth=2
             )
+
             plt.title(f"Predicted vs Actual ({best_model_name})")
             plt.xlabel("Реальні значення (Actual)")
             plt.ylabel("Прогнозовані значення (Predicted)")
@@ -856,59 +847,6 @@ else:
                 dpi=300,
                 bbox_inches="tight"
             )
-            plt.close()
-
-            if "Polynomial" in best_model_name:
-                best_poly_obj = fitted_reg_models[best_model_name][1]
-                best_est_obj = fitted_reg_models[best_model_name][0]
-                best_y_pred = best_est_obj.predict(best_poly_obj.transform(X_test_reg_scaled))
-            else:
-                best_y_pred = fitted_reg_models[best_model_name].predict(X_test_reg_scaled)
-
-           
-            plt.figure(figsize=(10, 5))
-
-            plt.bar(
-                regression_df_results.index,
-                regression_df_results["MSE"]
-            )
-
-            plt.title("Порівняння регресійних моделей за MSE")
-            plt.xlabel("Модель")
-            plt.ylabel("MSE")
-            plt.xticks(rotation=15)
-            plt.tight_layout()
-
-            plt.savefig(
-                folder / "regression_models_mse_comparison.png",
-                dpi=300,
-                bbox_inches="tight"
-            )
-
-            plt.show()
-            plt.close()
-
-         
-            plt.figure(figsize=(6, 6))
-            plt.scatter(y_test_reg, best_y_pred, alpha=0.4, color='teal')
-            plt.plot([y_test_reg.min(), y_test_reg.max()], [y_test_reg.min(), y_test_reg.max()], 'r--', lw=2)
-            plt.title(f"Predicted vs Actual ({best_model_name})")
-            plt.xlabel("Реальні значення (Actual)")
-            plt.ylabel("Прогнозовані значення (Predicted)")
-            plt.tight_layout()
-            plt.savefig(folder / "regression_pred_vs_actual.png", dpi=300, bbox_inches="tight")
-            plt.show()
-            plt.close()
-
-            residuals = y_test_reg - best_y_pred
-            plt.figure(figsize=(8, 4))
-            sns.histplot(residuals, kde=True, color='crimson', bins=30)
-            plt.title(f"Розподіл помилок (Residuals) — {best_model_name}")
-            plt.xlabel("Помилка (Actual - Predicted)")
-            plt.ylabel("Кількість")
-            plt.tight_layout()
-            plt.savefig(folder / "regression_residuals.png", dpi=300, bbox_inches="tight")
-            plt.show()
             plt.close()
 
 print("\nУСІ ЗАВДАННЯ ЗАВЕРШЕНО")
